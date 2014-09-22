@@ -79,6 +79,7 @@ public class Hw1Switch
     // Stores the learned state for each switch
     protected Map<IOFSwitch, Map<Long, Short>> macToSwitchPortMap;
 */
+    protected ConcurrentHashMap<IOFSwitch, Map<Long, Short>> macToSwitchPortMap = new ConcurrentHashMap<IOFSwitch, Map<Long, Short>>();
 
 /* CS6998: data structures for the firewall feature
     // Stores the MAC address of hosts to block: <Macaddr, blockedTime>
@@ -86,6 +87,7 @@ public class Hw1Switch
 
     ...more
 */
+    protected ConcurrentHashMap<Long, Long> blacklist = new ConcurrentHashMap<Long, Long>();
 
     // flow-mod - for use in the cookie
     public static final int HW1_SWITCH_APP_ID = 10;
@@ -132,31 +134,30 @@ public class Hw1Switch
      * @param mac The MAC address of the host to add
      * @param portVal The switchport that the host is on
      */
-/* CS6998: fill out the following ????s
+/* CS6998: fill out the following ????s */
     protected void addToPortMap(IOFSwitch sw, long mac, short portVal) {
-        Map<Long, Short> swMap = ????;
+        Map<Long, Short> swMap = macToSwitchPortMap.get(sw);
         
         if (swMap == null) {
             // May be accessed by REST API so we need to make it thread safe
             swMap = Collections.synchronizedMap(new LRULinkedHashMap<Long, Short>(MAX_MACS_PER_SWITCH));
-            macToSwitchPortMap.put(????);
+            macToSwitchPortMap.put(sw, swMap);
         }
-        swMap.put(????);
+        swMap.put(mac, portVal);
     }
-*/
     
     /**
      * Removes a host from the MAC->SwitchPort mapping
      * @param sw The switch to remove the mapping from
      * @param mac The MAC address of the host to remove
      */
-/* CS6998: fill out the following ????s
+/* CS6998: fill out the following ????s */
     protected void removeFromPortMap(IOFSwitch sw, long mac) {
-        Map<Long, Short> swMap = macToSwitchPortMap.????
+        Map<Long, Short> swMap = macToSwitchPortMap.get(sw);
+        
         if (swMap != null)
-            ????
+            swMap.remove(mac);
     }
-*/
 
     /**
      * Get the port that a MAC is associated with
@@ -164,11 +165,15 @@ public class Hw1Switch
      * @param mac The MAC address to get
      * @return The port the host is on
      */
-/* CS6998: fill out the following method
+/* CS6998: fill out the following method */
     public Short getFromPortMap(IOFSwitch sw, long mac) {
-        ....
+        Map<Long, Short> swMap = macToSwitchPortMap.get(sw);
+        
+        if (swMap == null)
+        	return null;
+        else
+        	return swMap.get(mac);
     }
-*/
     
     /**
      * Writes a OFFlowMod to a switch.
