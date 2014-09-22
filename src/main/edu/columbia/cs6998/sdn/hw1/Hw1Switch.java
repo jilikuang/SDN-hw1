@@ -75,19 +75,13 @@ public class Hw1Switch
     // Module dependencies
     protected IFloodlightProviderService floodlightProvider;
     
-/* CS6998: data structures for the learning switch feature
+/* CS6998: data structures for the learning switch feature */
     // Stores the learned state for each switch
     protected Map<IOFSwitch, Map<Long, Short>> macToSwitchPortMap;
-*/
-    protected ConcurrentHashMap<IOFSwitch, Map<Long, Short>> macToSwitchPortMap = new ConcurrentHashMap<IOFSwitch, Map<Long, Short>>();
 
-/* CS6998: data structures for the firewall feature
+/* CS6998: data structures for the firewall feature */
     // Stores the MAC address of hosts to block: <Macaddr, blockedTime>
     protected Map<Long, Long> blacklist;
-
-    ...more
-*/
-    protected ConcurrentHashMap<Long, Long> blacklist = new ConcurrentHashMap<Long, Long>();
 
     // flow-mod - for use in the cookie
     public static final int HW1_SWITCH_APP_ID = 10;
@@ -313,6 +307,7 @@ public class Hw1Switch
 /* CS6998: Do works here to learn the port for this MAC
         ....
 */
+        this.addToPortMap(sw, sourceMac, match.getInputPort());
 
 /* CS6998: Do works here to implement super firewall
         Hint: You may check connection limitation here.
@@ -331,14 +326,14 @@ public class Hw1Switch
  */
         this.writePacketOutForPacketIn(sw, pi, OFPort.OFPP_FLOOD.getValue());
 
-/* CS6998: Ask the switch to flood the packet to all of its ports
+/* CS6998: Ask the switch to flood the packet to all of its ports */
         // Now output flow-mod and/or packet
         // CS6998: Fill out the following ???? to obtain outPort
-        Short outPort = ....;
+        Short outPort = this.getFromPortMap(sw, destMac);
         if (outPort == null) {
             // If we haven't learned the port for the dest MAC, flood it
             // CS6998: Fill out the following ????
-            this.writePacketOutForPacketIn(sw, pi, OFPort.OFPP_????.getValue());
+            this.writePacketOutForPacketIn(sw, pi, OFPort.OFPP_FLOOD.getValue());
         } else if (outPort == match.getInputPort()) {
             log.trace("ignoring packet that arrived on same port as learned destination:"
                     + " switch {} dest MAC {} port {}",
@@ -351,9 +346,8 @@ public class Hw1Switch
                     & ~OFMatch.OFPFW_DL_SRC & ~OFMatch.OFPFW_DL_DST
                     & ~OFMatch.OFPFW_NW_SRC_MASK & ~OFMatch.OFPFW_NW_DST_MASK);
             // CS6998: Fill out the following ????
-            this.writeFlowMod(sw, OFFlowMod.OFPFC_ADD, pi.getBufferId(), match, ????);
+            this.writeFlowMod(sw, OFFlowMod.OFPFC_ADD, pi.getBufferId(), match, outPort);
         }
-*/
         return Command.CONTINUE;
     }
 
@@ -447,12 +441,11 @@ public class Hw1Switch
             throws FloodlightModuleException {
         floodlightProvider =
                 context.getServiceImpl(IFloodlightProviderService.class);
-/* CS6998: Initialize data structures
+/* CS6998: Initialize data structures */
         macToSwitchPortMap = 
                 new ConcurrentHashMap<IOFSwitch, Map<Long, Short>>();
         blacklist =
                 new HashMap<Long, Long>();
-*/
     }
 
     @Override
