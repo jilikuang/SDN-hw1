@@ -171,7 +171,7 @@ public class Hw1Switch
     
     /**
      * Writes a OFFlowMod to a switch.
-     * @param sw The switch tow rite the flowmod to.
+     * @param sw The switch to write the flowmod to.
      * @param command The FlowMod actions (add, delete, etc).
      * @param bufferId The buffer ID if the switch has buffered the packet.
      * @param match The OFMatch structure to write.
@@ -240,7 +240,7 @@ public class Hw1Switch
      * Writes an OFPacketOut message to a switch.
      * @param sw The switch to write the PacketOut to.
      * @param packetInMessage The corresponding PacketIn.
-     * @param egressPort The switchport to output the PacketOut.
+     * @param egressPort The switch port to output the PacketOut.
      */
     private void writePacketOutForPacketIn(IOFSwitch sw, 
                                           OFPacketIn packetInMessage, 
@@ -324,7 +324,7 @@ public class Hw1Switch
 /* CS6998: Ask the switch to flood the packet to all of its ports
  *         Thus, this module currently works as a dummy hub
  */
-        this.writePacketOutForPacketIn(sw, pi, OFPort.OFPP_FLOOD.getValue());
+        //this.writePacketOutForPacketIn(sw, pi, OFPort.OFPP_FLOOD.getValue());
 
 /* CS6998: Ask the switch to flood the packet to all of its ports */
         // Now output flow-mod and/or packet
@@ -341,7 +341,7 @@ public class Hw1Switch
         } else {
             // Add flow table entry matching source MAC, dest MAC and input port
             // that sends to the port we previously learned for the dest MAC.
-            match.setWildcards(((Integer)sw.getAttribute(IOFSwitch.PROP_FASTWILDCARDS)).intValue()
+            match.setWildcards(((Integer) sw.getAttribute(IOFSwitch.PROP_FASTWILDCARDS)).intValue()
                     & ~OFMatch.OFPFW_IN_PORT
                     & ~OFMatch.OFPFW_DL_SRC & ~OFMatch.OFPFW_DL_DST
                     & ~OFMatch.OFPFW_NW_SRC_MASK & ~OFMatch.OFPFW_NW_DST_MASK);
