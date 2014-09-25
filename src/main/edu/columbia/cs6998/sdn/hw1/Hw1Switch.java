@@ -40,6 +40,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.floodlightcontroller.core.FloodlightContext;
@@ -82,6 +83,7 @@ public class Hw1Switch
 /* CS6998: data structures for the firewall feature */
     // Stores the MAC address of hosts to block: <Macaddr, blockedTime>
     protected Map<Long, Long> blacklist;
+    protected Map<Long, Set<Long>> dstset;
 
     // flow-mod - for use in the cookie
     public static final int HW1_SWITCH_APP_ID = 10;
@@ -95,6 +97,7 @@ public class Hw1Switch
     protected static final short IDLE_TIMEOUT_DEFAULT = 10;
     protected static final short HARD_TIMEOUT_DEFAULT = 0;
     protected static final short PRIORITY_DEFAULT = 100;
+    protected static final short FIREWALL_BLOCK_TIMEOUT = 10;
     
     // for managing our map sizes
     protected static final int MAX_MACS_PER_SWITCH  = 1000;    
@@ -169,6 +172,33 @@ public class Hw1Switch
         	return swMap.get(mac);
     }
     
+    public void addToDstSet(long srcMac, long dstMac) {
+    	Set<Long> dset = dstset.get(srcMac);
+    	
+    	if (dset == null) {
+    		dset = Collections.synchronizedSet(new HashSet<Long>());
+    		dstset.put(srcMac, dset);
+    	}
+    	dset.add(dstMac);
+    }
+    
+    public void clearDstSet(long srcMac) {
+    	Set<Long> dset = dstset.get(srcMac);
+    	
+    	if (dset != null)
+    		dset.clear();
+    }
+    
+    public boolean checkDstSetCapacity(long srcMac) {
+    	Set<Long> dset = dstset.get(srcMac);
+    	
+    	if (dset == null)
+    	    // No set means no destinations were added
+    	    return true;
+    	
+    	return (dset.size() > Hw1Switch.MAX_DESTINATION_NUMBER) ? false :  true;
+    }
+
     /**
      * Writes a OFFlowMod to a switch.
      * @param sw The switch to write the flowmod to.
@@ -316,10 +346,27 @@ public class Hw1Switch
 
 /* CS6998: Filter-out hosts in blacklist
  *         Also, when the host is in blacklist check if the blockout time is
- *         expired and handle properly
-        if (....)
-            return Command.CONTINUE;
-*/
+ *         expired and handle properly */
+        if (blacklist.containsKey(sourceMac)) {
+        	long timeDiff = System.currentTimeMillis() - blacklist.get(sourceMac);
+        	
+        	if (timeDiff < Hw1Switch.FIREWALL_BLOCK_TIME_DUR) {
+        		return Command.CONTINUE;
+        	} else {
+        		/* Remove from the blacklist. Release the source */
+        		blacklist.remove(sourceMac);
+        		this.clearDstSet(sourceMac);
+        	}
+        } else {
+        	if (destMac < 1000)
+        		// Only take MAC < 1000 into account of valid destination MAC
+        		this.addToDstSet(sourceMac, destMac);
+        	
+        	if (!this.checkDstSetCapacity(sourceMac)) {
+        		blacklist.put(sourceMac, System.currentTimeMillis());
+        		return Command.CONTINUE;
+        	}
+        }
 
 /* CS6998: Ask the switch to flood the packet to all of its ports
  *         Thus, this module currently works as a dummy hub
@@ -446,6 +493,8 @@ public class Hw1Switch
                 new ConcurrentHashMap<IOFSwitch, Map<Long, Short>>();
         blacklist =
                 new HashMap<Long, Long>();
+        dstset =
+        	new HashMap<Long, Set<Long>>();
     }
 
     @Override
