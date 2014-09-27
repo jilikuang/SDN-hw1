@@ -84,6 +84,7 @@ public class Hw1Switch
     // Stores the MAC address of hosts to block: <Macaddr, blockedTime>
     protected Map<Long, Long> blacklist;
     protected Map<Long, Set<Long>> dstset;
+    protected Map<IOFSwitch, Set<Long>> efset;
 
     // flow-mod - for use in the cookie
     public static final int HW1_SWITCH_APP_ID = 10;
@@ -95,7 +96,7 @@ public class Hw1Switch
     
     // more flow-mod defaults 
     protected static final short IDLE_TIMEOUT_DEFAULT = 10;
-    protected static final short HARD_TIMEOUT_DEFAULT = 0;
+    protected static final short HARD_TIMEOUT_DEFAULT = 9;
     protected static final short PRIORITY_DEFAULT = 100;
     protected static final short FIREWALL_BLOCK_TIMEOUT = 10;
     
@@ -167,28 +168,42 @@ public class Hw1Switch
         Map<Long, Short> swMap = macToSwitchPortMap.get(sw);
         
         if (swMap == null)
-        	return null;
+            return null;
         else
-        	return swMap.get(mac);
+            return swMap.get(mac);
     }
     
+    /**
+     * Add the destination MAC to the source destination list
+     * @param srcMac The source MAC
+     * @param dstMac The destination MAC
+     */
     public void addToDstSet(long srcMac, long dstMac) {
     	Set<Long> dset = dstset.get(srcMac);
     	
     	if (dset == null) {
-    		dset = Collections.synchronizedSet(new HashSet<Long>());
-    		dstset.put(srcMac, dset);
+    	    dset = Collections.synchronizedSet(new HashSet<Long>());
+    	    dstset.put(srcMac, dset);
     	}
     	dset.add(dstMac);
     }
     
+    /**
+     * Clear the destination list of the corresponding list
+     * @param srcMac The source MAC
+     */
     public void clearDstSet(long srcMac) {
     	Set<Long> dset = dstset.get(srcMac);
     	
     	if (dset != null)
-    		dset.clear();
+    	    dset.clear();
     }
     
+    /**
+     * Check if the source exceed its destination maximum
+     * @param srcMac The source MAC
+     * @return The source still have destinations fewer than the maximum
+     */
     public boolean checkDstSetCapacity(long srcMac) {
     	Set<Long> dset = dstset.get(srcMac);
     	
@@ -197,6 +212,68 @@ public class Hw1Switch
     	    return true;
     	
     	return (dset.size() > Hw1Switch.MAX_DESTINATION_NUMBER) ? false :  true;
+    }
+    
+    /**
+     * Add source MAC of an elephant flow to the elephant flow list of a switch
+     * @param sw The switch
+     * @param srcMac The source MAC
+     */
+    public void addToEleFlowSet(IOFSwitch sw, long srcMac) {
+	Set<Long> swSet = efset.get(sw);
+        
+        if (swSet == null) {
+            // May be accessed by REST API so we need to make it thread safe
+            swSet = Collections.synchronizedSet(new HashSet<Long>());
+            efset.put(sw, swSet);
+        }
+        swSet.add(srcMac);
+    }
+    
+    /**
+     * Remove source MAC from the elephant flow list of a switch
+     * @param sw The switch
+     * @param srcMac The source MAC
+     */
+    protected void removeFromEleFlowSet(IOFSwitch sw, long srcMac) {
+	Set<Long> swSet = efset.get(sw);
+	
+	if (swSet != null)
+	    swSet.remove(srcMac);
+    }
+    
+    /**
+     * Clear the elephant flow list of a switch
+     * @param sw The switch
+     */
+    protected void clearEleFlowSet(IOFSwitch sw) {
+	Set<Long> swSet = efset.get(sw);
+	
+	if (swSet != null)
+	    swSet.clear();
+    }
+    
+    /**
+     * Check if the switch has more than 1 elephant flow
+     * @param sw The switch
+     * @return Whether the switch passes the elephant flow capacity check
+     */
+    public boolean checkEleFlowSetCapacity(IOFSwitch sw) {
+	Set<Long> swSet = efset.get(sw);
+	
+	if (swSet == null)
+	    return true;
+	
+	return (swSet.size() > Hw1Switch.MAX_ELEPHANT_FLOW_NUMBER) ? false : true;
+    }
+    
+    /**
+     * Get the elephant flow set of a switch
+     * @param sw The switch
+     * @return The source set with elephant flow set
+     */
+    public Set<Long> getFromEleFlowSet(IOFSwitch sw) {
+	return efset.get(sw);
     }
 
     /**
@@ -348,24 +425,34 @@ public class Hw1Switch
  *         Also, when the host is in blacklist check if the blockout time is
  *         expired and handle properly */
         if (blacklist.containsKey(sourceMac)) {
-        	long timeDiff = System.currentTimeMillis() - blacklist.get(sourceMac);
-        	
-        	if (timeDiff < Hw1Switch.FIREWALL_BLOCK_TIME_DUR) {
-        		return Command.CONTINUE;
-        	} else {
-        		/* Remove from the blacklist. Release the source */
-        		blacklist.remove(sourceMac);
-        		this.clearDstSet(sourceMac);
-        	}
+            long timeDiff = System.currentTimeMillis() - blacklist.get(sourceMac);
+            
+            if (timeDiff < Hw1Switch.FIREWALL_BLOCK_TIME_DUR) {
+        	return Command.CONTINUE;
+            } else {
+        	/* Remove from the blacklist. Release the source */
+        	blacklist.remove(sourceMac);
+            }
         } else {
-        	if (destMac < 1000)
-        		// Only take MAC < 1000 into account of valid destination MAC
-        		this.addToDstSet(sourceMac, destMac);
+            if (destMac < 1000)
+        	// Only take MAC < 1000 into account of valid destination MAC
+        	this.addToDstSet(sourceMac, destMac);
         	
-        	if (!this.checkDstSetCapacity(sourceMac)) {
-        		blacklist.put(sourceMac, System.currentTimeMillis());
-        		return Command.CONTINUE;
-        	}
+            if (!this.checkDstSetCapacity(sourceMac)) {
+        	blacklist.put(sourceMac, System.currentTimeMillis());
+        	this.clearDstSet(sourceMac);
+        	return Command.CONTINUE;
+            }
+            
+            if (!this.checkEleFlowSetCapacity(sw)) {
+        	Set<Long> swSet = this.getFromEleFlowSet(sw);
+        	
+        	if (swSet.iterator().hasNext())
+        	    blacklist.put(swSet.iterator().next(), System.currentTimeMillis());
+        	
+        	this.clearEleFlowSet(sw);
+        	return Command.CONTINUE;
+            }
         }
 
 /* CS6998: Ask the switch to flood the packet to all of its ports
@@ -404,7 +491,7 @@ public class Hw1Switch
      * @param flowRemovedMessage The flow removed message.
      * @return Whether to continue processing this message or stop.
      */
-/*    private Command processFlowRemovedMessage(IOFSwitch sw, OFFlowRemoved flowRemovedMessage) {
+    private Command processFlowRemovedMessage(IOFSwitch sw, OFFlowRemoved flowRemovedMessage) {
         if (flowRemovedMessage.getCookie() != Hw1Switch.HW1_SWITCH_COOKIE) {
             return Command.CONTINUE;
         }
@@ -420,10 +507,18 @@ public class Hw1Switch
         //  Hint: You may detect Elephant Flow here.
         //  ....
         //
+        if (flowRemovedMessage.getReason() == OFFlowRemoved.OFFlowRemovedReason.OFPRR_HARD_TIMEOUT) {
+            if (flowRemovedMessage.getByteCount() / HARD_TIMEOUT_DEFAULT > ELEPHANT_FLOW_BAND_WIDTH)
+        	this.addToEleFlowSet(sw, sourceMac);
+            else
+        	this.removeFromEleFlowSet(sw, sourceMac);
+        } else {
+            this.removeFromEleFlowSet(sw, sourceMac);
+        }
         
         return Command.CONTINUE;
     }
-*/
+
     // IOFMessageListener
     
     @Override
@@ -431,10 +526,8 @@ public class Hw1Switch
         switch (msg.getType()) {
             case PACKET_IN:
                 return this.processPacketInMessage(sw, (OFPacketIn) msg, cntx);
-            /*
             case FLOW_REMOVED:
                 return this.processFlowRemovedMessage(sw, (OFFlowRemoved) msg);
-            */
             case ERROR:
                 log.info("received an error {} from switch {}", (OFError) msg, sw);
                 return Command.CONTINUE;
@@ -495,12 +588,14 @@ public class Hw1Switch
                 new HashMap<Long, Long>();
         dstset =
         	new HashMap<Long, Set<Long>>();
+        efset =
+        	new ConcurrentHashMap<IOFSwitch, Set<Long>>();
     }
 
     @Override
     public void startUp(FloodlightModuleContext context) {
         floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
-        //floodlightProvider.addOFMessageListener(OFType.FLOW_REMOVED, this);
+        floodlightProvider.addOFMessageListener(OFType.FLOW_REMOVED, this);
         floodlightProvider.addOFMessageListener(OFType.ERROR, this);
     }
 }
