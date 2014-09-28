@@ -38,6 +38,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -433,26 +434,38 @@ public class Hw1Switch
         	/* Remove from the blacklist. Release the source */
         	blacklist.remove(sourceMac);
             }
-        } else {
-            if (destMac < 1000)
-        	// Only take MAC < 1000 into account of valid destination MAC
-        	this.addToDstSet(sourceMac, destMac);
-        	
-            if (!this.checkDstSetCapacity(sourceMac)) {
-        	blacklist.put(sourceMac, System.currentTimeMillis());
-        	this.clearDstSet(sourceMac);
-        	return Command.CONTINUE;
+        }
+        
+        if (destMac < 1000)
+            // Only take MAC < 1000 into account of valid destination MAC
+            this.addToDstSet(sourceMac, destMac);
+        
+        if (!this.checkDstSetCapacity(sourceMac)) {
+            blacklist.put(sourceMac, System.currentTimeMillis());
+            // Try to remove all existing flows from the source MAC
+            match.setWildcards(OFMatch.OFPFW_ALL & ~OFMatch.OFPFW_IN_PORT
+        	    & ~OFMatch.OFPFW_DL_SRC & ~OFMatch.OFPFW_NW_SRC_MASK);
+            this.writeFlowMod(sw, OFFlowMod.OFPFC_DELETE, -1, match, OFPort.OFPP_NONE.getValue());
+            this.clearDstSet(sourceMac);
+            return Command.CONTINUE;
+        }
+
+        if (!this.checkEleFlowSetCapacity(sw)) {
+            Set<Long> swSet = this.getFromEleFlowSet(sw);
+            Iterator<Long> iter = swSet.iterator();
+            long sysTime = System.currentTimeMillis();
+
+            // Try to remove all existing flows from all the source MACs
+            while (iter.hasNext()) {
+        	Long srcMac = iter.next();
+        	blacklist.put(srcMac, sysTime);
+        	match.setWildcards(OFMatch.OFPFW_ALL & ~OFMatch.OFPFW_IN_PORT
+        		& ~OFMatch.OFPFW_DL_SRC & ~OFMatch.OFPFW_NW_SRC_MASK);
+        	this.writeFlowMod(sw, OFFlowMod.OFPFC_DELETE, -1, match, OFPort.OFPP_ALL.getValue());
             }
-            
-            if (!this.checkEleFlowSetCapacity(sw)) {
-        	Set<Long> swSet = this.getFromEleFlowSet(sw);
-        	
-        	if (swSet.iterator().hasNext())
-        	    blacklist.put(swSet.iterator().next(), System.currentTimeMillis());
-        	
-        	this.clearEleFlowSet(sw);
-        	return Command.CONTINUE;
-            }
+
+            this.clearEleFlowSet(sw);
+            return Command.CONTINUE;
         }
 
 /* CS6998: Ask the switch to flood the packet to all of its ports
