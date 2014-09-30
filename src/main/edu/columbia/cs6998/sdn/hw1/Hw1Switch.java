@@ -38,7 +38,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -244,17 +243,6 @@ public class Hw1Switch
     }
     
     /**
-     * Clear the elephant flow list of a switch
-     * @param sw The switch
-     */
-    protected void clearEleFlowSet(IOFSwitch sw) {
-	Set<Long> swSet = efset.get(sw);
-	
-	if (swSet != null)
-	    swSet.clear();
-    }
-    
-    /**
      * Check if the switch has more than 1 elephant flow
      * @param sw The switch
      * @return Whether the switch passes the elephant flow capacity check
@@ -273,8 +261,11 @@ public class Hw1Switch
      * @param sw The switch
      * @return The source set with elephant flow set
      */
-    public Set<Long> getFromEleFlowSet(IOFSwitch sw) {
-	return efset.get(sw);
+    public Set<Long> cloneFromEleFlowSet(IOFSwitch sw) {
+	Set<Long> swSet = Collections.synchronizedSet(new HashSet<Long>());
+	
+	swSet.addAll(efset.get(sw));
+	return swSet;
     }
 
     /**
@@ -443,28 +434,31 @@ public class Hw1Switch
         if (!this.checkDstSetCapacity(sourceMac)) {
             blacklist.put(sourceMac, System.currentTimeMillis());
             // Try to remove all existing flows from the source MAC
-            match.setWildcards(OFMatch.OFPFW_ALL & ~OFMatch.OFPFW_IN_PORT
-        	    & ~OFMatch.OFPFW_DL_SRC & ~OFMatch.OFPFW_NW_SRC_MASK);
-            this.writeFlowMod(sw, OFFlowMod.OFPFC_DELETE, -1, match, OFPort.OFPP_NONE.getValue());
+            match.setWildcards(OFMatch.OFPFW_ALL & ~OFMatch.OFPFW_DL_SRC);
+            Set<IOFSwitch> iterSw = macToSwitchPortMap.keySet();
+            for (IOFSwitch tmpSw : iterSw) {
+        	this.writeFlowMod(tmpSw, OFFlowMod.OFPFC_DELETE, -1, match, OFPort.OFPP_NONE.getValue());
+            }
             this.clearDstSet(sourceMac);
             return Command.CONTINUE;
         }
 
         if (!this.checkEleFlowSetCapacity(sw)) {
-            Set<Long> swSet = this.getFromEleFlowSet(sw);
-            Iterator<Long> iter = swSet.iterator();
             long sysTime = System.currentTimeMillis();
+            Set<Long> swSet = this.cloneFromEleFlowSet(sw);
 
             // Try to remove all existing flows from all the source MACs
-            while (iter.hasNext()) {
-        	Long srcMac = iter.next();
+            for (Long srcMac : swSet) {
         	blacklist.put(srcMac, sysTime);
-        	match.setWildcards(OFMatch.OFPFW_ALL & ~OFMatch.OFPFW_IN_PORT
-        		& ~OFMatch.OFPFW_DL_SRC & ~OFMatch.OFPFW_NW_SRC_MASK);
-        	this.writeFlowMod(sw, OFFlowMod.OFPFC_DELETE, -1, match, OFPort.OFPP_ALL.getValue());
+        	match.setWildcards(OFMatch.OFPFW_ALL & ~OFMatch.OFPFW_DL_SRC);
+        	match.setDataLayerSource(Ethernet.toByteArray(srcMac));
+        	Set<IOFSwitch> iterSw = macToSwitchPortMap.keySet();
+        	for (IOFSwitch tmpSw : iterSw) {
+                    this.writeFlowMod(tmpSw, OFFlowMod.OFPFC_DELETE, -1, match, OFPort.OFPP_NONE.getValue());
+                    this.removeFromEleFlowSet(tmpSw, srcMac);
+                }
             }
 
-            this.clearEleFlowSet(sw);
             return Command.CONTINUE;
         }
 
@@ -510,7 +504,7 @@ public class Hw1Switch
         }
 
         Long sourceMac = Ethernet.toLong(flowRemovedMessage.getMatch().getDataLayerSource());
-        Long destMac = Ethernet.toLong(flowRemovedMessage.getMatch().getDataLayerDestination());
+        //Long destMac = Ethernet.toLong(flowRemovedMessage.getMatch().getDataLayerDestination());
 
         if (log.isTraceEnabled()) {
             log.trace("{} flow entry removed {}", sw, flowRemovedMessage);
