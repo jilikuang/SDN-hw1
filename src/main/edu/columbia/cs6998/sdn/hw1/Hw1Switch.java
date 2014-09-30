@@ -387,6 +387,46 @@ public class Hw1Switch
     }
     
     /**
+     * Write packet dropping to the switches
+     * @param sourceMac The source MAC to block
+     *//*
+    private void writeBlockSourceMacToSwitch(long sourceMac) {
+	Set<IOFSwitch> swSet = macToSwitchPortMap.keySet();
+	OFFlowMod flowMod = (OFFlowMod) floodlightProvider.getOFMessageFactory().getMessage(OFType.FLOW_MOD);
+	OFMatch match = new OFMatch();
+	
+	match.setWildcards(OFMatch.OFPFW_ALL & ~OFMatch.OFPFW_DL_SRC);
+	match.setDataLayerSource(Ethernet.toByteArray(sourceMac));
+	
+        flowMod.setMatch(match);
+        flowMod.setCookie(Hw1Switch.HW1_SWITCH_COOKIE);
+        flowMod.setCommand(OFFlowMod.OFPFC_ADD);
+        flowMod.setIdleTimeout((short) 0);
+        flowMod.setHardTimeout((short) (Hw1Switch.FIREWALL_BLOCK_TIME_DUR/1000));
+        flowMod.setPriority((short) (Hw1Switch.PRIORITY_DEFAULT+1));
+        flowMod.setBufferId(OFPacketOut.BUFFER_ID_NONE);
+        flowMod.setOutPort(OFPort.OFPP_NONE.getValue());
+        flowMod.setFlags((short) (1 << 0)); // OFPFF_SEND_FLOW_REM
+
+        List<OFAction> actions = new ArrayList<OFAction>();
+        flowMod.setActions(actions);
+        flowMod.setLength((short) OFFlowMod.MINIMUM_LENGTH);
+        
+        // and write it out
+        for (IOFSwitch sw : swSet) {
+            if (log.isTraceEnabled()) {
+        	log.trace("{} {} flow mod {}", 
+        		new Object[] { sw, "blocking", flowMod });
+            }
+            try {
+        	sw.write(flowMod, null);
+            } catch (IOException e) {
+        	log.error("Failed to write {} to switch {}", new Object[] { flowMod, sw }, e);
+            }
+        }
+    }*/
+    
+    /**
      * Processes a OFPacketIn message. If the switch has learned the MAC to port mapping
      * for the pair it will write a FlowMod for. If the mapping has not been learned the 
      * we will flood the packet.
@@ -439,6 +479,7 @@ public class Hw1Switch
             for (IOFSwitch tmpSw : iterSw) {
         	this.writeFlowMod(tmpSw, OFFlowMod.OFPFC_DELETE, -1, match, OFPort.OFPP_NONE.getValue());
             }
+            //this.writeBlockSourceMacToSwitch(sourceMac);
             this.clearDstSet(sourceMac);
             return Command.CONTINUE;
         }
@@ -457,6 +498,7 @@ public class Hw1Switch
                     this.writeFlowMod(tmpSw, OFFlowMod.OFPFC_DELETE, -1, match, OFPort.OFPP_NONE.getValue());
                     this.removeFromEleFlowSet(tmpSw, srcMac);
                 }
+        	//this.writeBlockSourceMacToSwitch(srcMac);
             }
 
             return Command.CONTINUE;
